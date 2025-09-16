@@ -15,25 +15,31 @@ from .serializers import (
 
 class UserProfileViewSet(viewsets.ModelViewSet):
     serializer_class = UserProfileSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
     def get_queryset(self):
-        return UserProfile.objects.filter(user=self.request.user)
+        if self.request.user.is_authenticated:
+            return UserProfile.objects.filter(user=self.request.user)
+        return UserProfile.objects.none()
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        if self.request.user.is_authenticated:
+            serializer.save(user=self.request.user)
 
 class ActivityTypeViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = ActivityType.objects.all()
     serializer_class = ActivityTypeSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
 class ActivityViewSet(viewsets.ModelViewSet):
     serializer_class = ActivitySerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
     def get_queryset(self):
-        queryset = Activity.objects.filter(user=self.request.user)
+        if self.request.user.is_authenticated:
+            queryset = Activity.objects.filter(user=self.request.user)
+        else:
+            queryset = Activity.objects.all()
         
         # Filter by date range if provided
         start_date = self.request.query_params.get('start_date')
@@ -78,12 +84,14 @@ class ActivityViewSet(viewsets.ModelViewSet):
 
 class TeamViewSet(viewsets.ModelViewSet):
     serializer_class = TeamSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
     def get_queryset(self):
-        return Team.objects.filter(
-            Q(members=self.request.user) | Q(captain=self.request.user)
-        ).distinct()
+        if self.request.user.is_authenticated:
+            return Team.objects.filter(
+                Q(members=self.request.user) | Q(captain=self.request.user)
+            ).distinct()
+        return Team.objects.all()
 
     @action(detail=True, methods=['post'])
     def join(self, request, pk=None):
@@ -105,12 +113,14 @@ class TeamViewSet(viewsets.ModelViewSet):
 
 class ChallengeViewSet(viewsets.ModelViewSet):
     serializer_class = ChallengeSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
     def get_queryset(self):
-        return Challenge.objects.filter(
-            Q(participants=self.request.user) | Q(team_participants__members=self.request.user)
-        ).distinct()
+        if self.request.user.is_authenticated:
+            return Challenge.objects.filter(
+                Q(participants=self.request.user) | Q(team_participants__members=self.request.user)
+            ).distinct()
+        return Challenge.objects.all()
 
     @action(detail=True, methods=['post'])
     def join(self, request, pk=None):
@@ -124,10 +134,12 @@ class ChallengeViewSet(viewsets.ModelViewSet):
 
 class WorkoutSuggestionViewSet(viewsets.ModelViewSet):
     serializer_class = WorkoutSuggestionSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
     def get_queryset(self):
-        return WorkoutSuggestion.objects.filter(user=self.request.user)
+        if self.request.user.is_authenticated:
+            return WorkoutSuggestion.objects.filter(user=self.request.user)
+        return WorkoutSuggestion.objects.all()
 
     @action(detail=True, methods=['post'])
     def complete(self, request, pk=None):
@@ -138,7 +150,7 @@ class WorkoutSuggestionViewSet(viewsets.ModelViewSet):
         return Response({'status': 'completed'})
 
 class LeaderboardViewSet(viewsets.ViewSet):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
     @action(detail=False, methods=['get'])
     def users(self, request):
