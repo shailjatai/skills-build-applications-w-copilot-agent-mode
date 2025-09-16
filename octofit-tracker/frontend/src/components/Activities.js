@@ -1,100 +1,81 @@
-import React, { useState } from 'react';
-import { Container, Row, Col, Card, Button, Modal, Form, Table, Badge } from 'react-bootstrap';
+import React, { useState, useEffect } from 'react';
+import { Container, Row, Col, Card, Button, Modal, Form, Table, Badge, Alert, Spinner } from 'react-bootstrap';
+import { activityTypesAPI, activitiesAPI } from '../services/api';
 
 function Activities() {
-  const [activities, setActivities] = useState([
-    {
-      id: 1,
-      type: 'Running',
-      duration: 30,
-      points: 45,
-      date: '2025-09-15',
-      intensity: 'high',
-      distance: 5.0,
-      notes: 'Morning jog around the park'
-    },
-    {
-      id: 2,
-      type: 'Weight Training',
-      duration: 45,
-      points: 59,
-      date: '2025-09-14',
-      intensity: 'medium',
-      distance: null,
-      notes: 'Upper body workout'
-    },
-    {
-      id: 3,
-      type: 'Yoga',
-      duration: 60,
-      points: 48,
-      date: '2025-09-13',
-      intensity: 'low',
-      distance: null,
-      notes: 'Relaxing evening session'
-    }
-  ]);
-
+  const [activities, setActivities] = useState([]);
+  const [activityTypes, setActivityTypes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [showModal, setShowModal] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [newActivity, setNewActivity] = useState({
-    type: 'Running',
-    duration: '',
+    activity_type_id: '',
+    duration_minutes: '',
     intensity: 'medium',
     distance: '',
     notes: ''
   });
 
-  const activityTypes = [
-    'Running', 'Walking', 'Weight Training', 'Yoga', 'Cycling', 
-    'Swimming', 'Basketball', 'Soccer', 'Dance', 'Pilates'
-  ];
+  // Load activity types and activities on component mount
+  useEffect(() => {
+    loadData();
+  }, []);
 
-  const handleSubmit = (e) => {
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const [typesResponse, activitiesResponse] = await Promise.all([
+        activityTypesAPI.getAll(),
+        activitiesAPI.getAll()
+      ]);
+      
+      setActivityTypes(typesResponse.results || []);
+      setActivities(activitiesResponse.results || []);
+    } catch (err) {
+      setError('Failed to load data. Please try again.');
+      console.error('Error loading data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
-    // Calculate points (simplified calculation)
-    const pointsPerMinute = {
-      'Running': 1.5,
-      'Walking': 1.0,
-      'Weight Training': 1.3,
-      'Yoga': 0.8,
-      'Cycling': 1.4,
-      'Swimming': 1.6,
-      'Basketball': 1.5,
-      'Soccer': 1.4,
-      'Dance': 1.2,
-      'Pilates': 1.0
-    };
+    try {
+      setSubmitting(true);
+      setError(null);
 
-    const intensityMultiplier = {
-      'low': 0.8,
-      'medium': 1.0,
-      'high': 1.3
-    };
+      const activityData = {
+        activity_type_id: parseInt(newActivity.activity_type_id),
+        duration_minutes: parseInt(newActivity.duration_minutes),
+        intensity: newActivity.intensity,
+        distance: newActivity.distance ? parseFloat(newActivity.distance) : null,
+        notes: newActivity.notes
+      };
 
-    const basePoints = parseInt(newActivity.duration) * pointsPerMinute[newActivity.type];
-    const totalPoints = Math.round(basePoints * intensityMultiplier[newActivity.intensity]);
-
-    const activity = {
-      id: Date.now(),
-      type: newActivity.type,
-      duration: parseInt(newActivity.duration),
-      points: totalPoints,
-      date: new Date().toISOString().split('T')[0],
-      intensity: newActivity.intensity,
-      distance: newActivity.distance ? parseFloat(newActivity.distance) : null,
-      notes: newActivity.notes
-    };
-
-    setActivities([activity, ...activities]);
-    setNewActivity({
-      type: 'Running',
-      duration: '',
-      intensity: 'medium',
-      distance: '',
-      notes: ''
-    });
-    setShowModal(false);
+      await activitiesAPI.create(activityData);
+      
+      // Reload activities to get the updated list
+      await loadData();
+      
+      setNewActivity({
+        activity_type_id: '',
+        duration_minutes: '',
+        intensity: 'medium',
+        distance: '',
+        notes: ''
+      });
+      setShowModal(false);
+    } catch (err) {
+      setError('Failed to create activity. Please try again.');
+      console.error('Error creating activity:', err);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const getIntensityBadge = (intensity) => {
@@ -108,9 +89,30 @@ function Activities() {
 
   const totalStats = {
     totalActivities: activities.length,
-    totalMinutes: activities.reduce((sum, activity) => sum + activity.duration, 0),
-    totalPoints: activities.reduce((sum, activity) => sum + activity.points, 0)
+    totalMinutes: activities.reduce((sum, activity) => sum + (activity.duration_minutes || 0), 0),
+    totalPoints: activities.reduce((sum, activity) => sum + (activity.points_awarded || 0), 0)
   };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return '';
+    return new Date(dateString).toLocaleDateString();
+  };
+
+  const getActivityTypeName = (typeId) => {
+    const type = activityTypes.find(t => t.id === typeId);
+    return type ? type.name : 'Unknown';
+  };
+
+  if (loading) {
+    return (
+      <Container className="text-center py-5">
+        <Spinner animation="border" role="status">
+          <span className="visually-hidden">Loading...</span>
+        </Spinner>
+        <p className="mt-2">Loading activities...</p>
+      </Container>
+    );
+  }
 
   return (
     <Container>
@@ -128,6 +130,16 @@ function Activities() {
           </div>
         </Col>
       </Row>
+
+      {error && (
+        <Row className="mb-4">
+          <Col>
+            <Alert variant="danger" dismissible onClose={() => setError(null)}>
+              {error}
+            </Alert>
+          </Col>
+        </Row>
+      )}
 
       {/* Summary Stats */}
       <Row className="mb-4">
@@ -181,12 +193,12 @@ function Activities() {
                   <tbody>
                     {activities.map(activity => (
                       <tr key={activity.id}>
-                        <td>{activity.date}</td>
-                        <td><strong>{activity.type}</strong></td>
-                        <td>{activity.duration} min</td>
+                        <td>{formatDate(activity.date_logged)}</td>
+                        <td><strong>{getActivityTypeName(activity.activity_type?.id || activity.activity_type_id)}</strong></td>
+                        <td>{activity.duration_minutes} min</td>
                         <td>{getIntensityBadge(activity.intensity)}</td>
                         <td>{activity.distance ? `${activity.distance} km` : '-'}</td>
-                        <td><Badge bg="primary">{activity.points}</Badge></td>
+                        <td><Badge bg="primary">{activity.points_awarded || 0}</Badge></td>
                         <td className="text-muted">{activity.notes || '-'}</td>
                       </tr>
                     ))}
@@ -216,11 +228,13 @@ function Activities() {
             <Form.Group className="mb-3">
               <Form.Label>Activity Type</Form.Label>
               <Form.Select
-                value={newActivity.type}
-                onChange={(e) => setNewActivity({...newActivity, type: e.target.value})}
+                value={newActivity.activity_type_id}
+                onChange={(e) => setNewActivity({...newActivity, activity_type_id: e.target.value})}
+                required
               >
+                <option value="">Select an activity type</option>
                 {activityTypes.map(type => (
-                  <option key={type} value={type}>{type}</option>
+                  <option key={type.id} value={type.id}>{type.name}</option>
                 ))}
               </Form.Select>
             </Form.Group>
@@ -231,8 +245,8 @@ function Activities() {
                 type="number"
                 min="1"
                 required
-                value={newActivity.duration}
-                onChange={(e) => setNewActivity({...newActivity, duration: e.target.value})}
+                value={newActivity.duration_minutes}
+                onChange={(e) => setNewActivity({...newActivity, duration_minutes: e.target.value})}
               />
             </Form.Group>
 
@@ -270,11 +284,18 @@ function Activities() {
             </Form.Group>
           </Modal.Body>
           <Modal.Footer>
-            <Button variant="secondary" onClick={() => setShowModal(false)}>
+            <Button variant="secondary" onClick={() => setShowModal(false)} disabled={submitting}>
               Cancel
             </Button>
-            <Button variant="primary" type="submit">
-              Log Activity
+            <Button variant="primary" type="submit" disabled={submitting}>
+              {submitting ? (
+                <>
+                  <Spinner as="span" animation="border" size="sm" role="status" aria-hidden="true" className="me-2" />
+                  Logging...
+                </>
+              ) : (
+                'Log Activity'
+              )}
             </Button>
           </Modal.Footer>
         </Form>

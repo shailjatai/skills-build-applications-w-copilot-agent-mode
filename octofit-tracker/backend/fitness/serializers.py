@@ -31,7 +31,19 @@ class ActivitySerializer(serializers.ModelSerializer):
         read_only_fields = ['points_awarded']
 
     def create(self, validated_data):
-        validated_data['user'] = self.context['request'].user
+        # For demonstration purposes, create a dummy user if none is authenticated
+        # In a real app, you'd require authentication
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            validated_data['user'] = request.user
+        else:
+            # Create or get a demo user for testing
+            from django.contrib.auth.models import User
+            demo_user, created = User.objects.get_or_create(
+                username='demo_user',
+                defaults={'email': 'demo@example.com', 'first_name': 'Demo', 'last_name': 'User'}
+            )
+            validated_data['user'] = demo_user
         return super().create(validated_data)
 
 class TeamSerializer(serializers.ModelSerializer):
@@ -49,9 +61,21 @@ class TeamSerializer(serializers.ModelSerializer):
         return obj.members.count()
 
     def create(self, validated_data):
-        validated_data['captain'] = self.context['request'].user
-        team = super().create(validated_data)
-        team.members.add(self.context['request'].user)  # Add captain as member
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            validated_data['captain'] = request.user
+            team = super().create(validated_data)
+            team.members.add(request.user)  # Add captain as member
+        else:
+            # Create or get a demo user for testing
+            from django.contrib.auth.models import User
+            demo_user, created = User.objects.get_or_create(
+                username='demo_user',
+                defaults={'email': 'demo@example.com', 'first_name': 'Demo', 'last_name': 'User'}
+            )
+            validated_data['captain'] = demo_user
+            team = super().create(validated_data)
+            team.members.add(demo_user)  # Add captain as member
         return team
 
 class ChallengeSerializer(serializers.ModelSerializer):
