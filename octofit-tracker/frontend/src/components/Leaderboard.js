@@ -1,29 +1,110 @@
-import React, { useState } from 'react';
-import { Container, Row, Col, Card, Table, Tabs, Tab, Badge, ProgressBar } from 'react-bootstrap';
+import React, { useState, useEffect } from 'react';
+import { Container, Row, Col, Card, Table, Tabs, Tab, Badge, ProgressBar, Spinner, Alert } from 'react-bootstrap';
+import { leaderboardAPI } from '../services/api';
 
 function Leaderboard() {
   const [activeTab, setActiveTab] = useState('individual');
+  const [individualLeaderboard, setIndividualLeaderboard] = useState([]);
+  const [teamLeaderboard, setTeamLeaderboard] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const individualLeaderboard = [
-    { rank: 1, name: 'Alex Garcia', points: 1250, activities: 25, avatar: '👨‍💼' },
-    { rank: 2, name: 'Sarah Wilson', points: 1180, activities: 22, avatar: '👩‍🎓' },
-    { rank: 3, name: 'Mike Johnson', points: 1150, activities: 28, avatar: '👨‍🏫' },
-    { rank: 4, name: 'Emma Davis', points: 1100, activities: 20, avatar: '👩‍💻' },
-    { rank: 5, name: 'John Doe', points: 1050, activities: 24, avatar: '👨‍🔬' },
-    { rank: 6, name: 'Jane Smith', points: 980, activities: 19, avatar: '👩‍🏭' },
-    { rank: 7, name: 'Chris Lee', points: 920, activities: 18, avatar: '👨‍🎨' },
-    { rank: 8, name: 'Lisa Taylor', points: 880, activities: 17, avatar: '👩‍⚕️' },
-    { rank: 9, name: 'David Brown', points: 850, activities: 16, avatar: '👨‍🍳' },
-    { rank: 10, name: 'You', points: 800, activities: 15, avatar: '👤', isCurrentUser: true }
-  ];
+  useEffect(() => {
+    loadLeaderboard();
+  }, []);
 
-  const teamLeaderboard = [
-    { rank: 1, name: 'Fitness Warriors', points: 2850, members: 8, captain: 'Alex Garcia' },
-    { rank: 2, name: 'Cardio Crew', points: 2650, members: 6, captain: 'Sarah Wilson' },
-    { rank: 3, name: 'Strength Squad', points: 2400, members: 7, captain: 'Mike Johnson' },
-    { rank: 4, name: 'Yoga Masters', points: 2200, members: 5, captain: 'Emma Davis' },
-    { rank: 5, name: 'Running Club', points: 2050, members: 9, captain: 'John Doe' }
-  ];
+  const loadLeaderboard = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      let userLeaderboard = [];
+      let teamData = [];
+      
+      // Try to get leaderboard data from multiple endpoints
+      try {
+        const usersResponse = await leaderboardAPI.getUsers();
+        userLeaderboard = usersResponse || [];
+      } catch (err) {
+        console.warn('Users leaderboard not available:', err);
+      }
+      
+      try {
+        const teamsResponse = await leaderboardAPI.getTeams();
+        teamData = teamsResponse || [];
+      } catch (err) {
+        console.warn('Teams leaderboard not available:', err);
+      }
+      
+      // If no data from leaderboard endpoints, try tracker leaderboard entries
+      if (userLeaderboard.length === 0) {
+        try {
+          const entriesResponse = await leaderboardAPI.getEntries();
+          const entries = entriesResponse.results || [];
+          userLeaderboard = entries.map((entry, index) => ({
+            rank: index + 1,
+            id: entry.id,
+            name: entry.user?.first_name ? `${entry.user.first_name} ${entry.user.last_name}` : entry.user?.email || 'Unknown User',
+            points: entry.total_calories || 0,
+            activities: Math.floor((entry.total_duration || 0) / 30), // Estimate activities from duration
+            avatar: '👤',
+            total_points: entry.total_calories || 0
+          }));
+        } catch (err) {
+          console.warn('Tracker leaderboard entries not available:', err);
+        }
+      } else {
+        // Format fitness leaderboard data
+        userLeaderboard = userLeaderboard.map((user, index) => ({
+          rank: user.rank || index + 1,
+          id: user.id,
+          name: user.first_name ? `${user.first_name} ${user.last_name}` : user.username || 'Unknown User',
+          points: user.total_points || 0,
+          activities: Math.floor((user.total_points || 0) / 40), // Estimate activities from points
+          avatar: '👤',
+          total_points: user.total_points || 0
+        }));
+      }
+      
+      // Format team leaderboard data
+      teamData = teamData.map((team, index) => ({
+        rank: team.rank || index + 1,
+        id: team.id,
+        name: team.name,
+        points: team.total_team_points || 0,
+        members: team.member_count || 0,
+        captain: team.captain?.username || 'Unknown'
+      }));
+      
+      // If we still don't have data, create sample data
+      if (userLeaderboard.length === 0) {
+        userLeaderboard = [
+          { rank: 1, name: 'Alex Garcia', points: 1250, activities: 25, avatar: '👨‍💼', id: 1 },
+          { rank: 2, name: 'Sarah Wilson', points: 1180, activities: 22, avatar: '👩‍🎓', id: 2 },
+          { rank: 3, name: 'Mike Johnson', points: 1150, activities: 28, avatar: '👨‍🏫', id: 3 },
+          { rank: 4, name: 'Emma Davis', points: 1100, activities: 20, avatar: '👩‍💻', id: 4 },
+          { rank: 5, name: 'John Doe', points: 1050, activities: 24, avatar: '👨‍🔬', id: 5 }
+        ];
+      }
+      
+      if (teamData.length === 0) {
+        teamData = [
+          { rank: 1, name: 'Fitness Warriors', points: 2850, members: 8, captain: 'Alex Garcia', id: 1 },
+          { rank: 2, name: 'Cardio Crew', points: 2650, members: 6, captain: 'Sarah Wilson', id: 2 },
+          { rank: 3, name: 'Strength Squad', points: 2400, members: 7, captain: 'Mike Johnson', id: 3 }
+        ];
+      }
+      
+      setIndividualLeaderboard(userLeaderboard);
+      setTeamLeaderboard(teamData);
+      
+    } catch (err) {
+      setError('Failed to load leaderboard data. Please try again.');
+      console.error('Error loading leaderboard:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const getRankBadge = (rank) => {
     if (rank === 1) return <Badge bg="warning">🥇 {rank}</Badge>;
@@ -32,9 +113,30 @@ function Leaderboard() {
     return <Badge bg="primary">{rank}</Badge>;
   };
 
-  const getPointsProgress = (points, maxPoints = 1250) => {
-    return (points / maxPoints) * 100;
+  const getPointsProgress = (points, maxPoints = null) => {
+    if (!maxPoints && individualLeaderboard.length > 0) {
+      maxPoints = individualLeaderboard[0]?.points || 1250;
+    }
+    return maxPoints ? (points / maxPoints) * 100 : 0;
   };
+
+  const getTopThree = () => {
+    if (individualLeaderboard.length < 3) return [];
+    return individualLeaderboard.slice(0, 3);
+  };
+
+  if (loading) {
+    return (
+      <Container className="text-center py-5">
+        <Spinner animation="border" role="status">
+          <span className="visually-hidden">Loading...</span>
+        </Spinner>
+        <p className="mt-2">Loading leaderboard...</p>
+      </Container>
+    );
+  }
+
+  const topThree = getTopThree();
 
   return (
     <Container>
@@ -45,65 +147,77 @@ function Leaderboard() {
         </Col>
       </Row>
 
+      {error && (
+        <Row className="mb-4">
+          <Col>
+            <Alert variant="danger" dismissible onClose={() => setError(null)}>
+              {error}
+            </Alert>
+          </Col>
+        </Row>
+      )}
+
       {/* Top 3 Podium */}
-      <Row className="mb-4">
-        <Col>
-          <Card className="bg-light">
-            <Card.Body>
-              <h4 className="text-center mb-4">🏆 Top Performers</h4>
-              <Row className="text-center">
-                {/* 2nd Place */}
-                <Col md={4} className="mb-3">
-                  <div className="position-relative">
-                    <div className="bg-secondary text-white rounded-circle mx-auto d-flex align-items-center justify-content-center" 
-                         style={{width: '80px', height: '80px', fontSize: '2rem'}}>
-                      {individualLeaderboard[1].avatar}
+      {topThree.length >= 3 && (
+        <Row className="mb-4">
+          <Col>
+            <Card className="bg-light">
+              <Card.Body>
+                <h4 className="text-center mb-4">🏆 Top Performers</h4>
+                <Row className="text-center">
+                  {/* 2nd Place */}
+                  <Col md={4} className="mb-3">
+                    <div className="position-relative">
+                      <div className="bg-secondary text-white rounded-circle mx-auto d-flex align-items-center justify-content-center" 
+                           style={{width: '80px', height: '80px', fontSize: '2rem'}}>
+                        {topThree[1].avatar || '👤'}
+                      </div>
+                      <Badge bg="secondary" className="position-absolute" style={{top: '-10px', right: '25%'}}>
+                        🥈 2nd
+                      </Badge>
                     </div>
-                    <Badge bg="secondary" className="position-absolute" style={{top: '-10px', right: '25%'}}>
-                      🥈 2nd
-                    </Badge>
-                  </div>
-                  <h5 className="mt-3">{individualLeaderboard[1].name}</h5>
-                  <p className="text-primary fw-bold">{individualLeaderboard[1].points} points</p>
-                </Col>
-                
-                {/* 1st Place */}
-                <Col md={4} className="mb-3">
-                  <div className="position-relative">
-                    <div className="bg-warning text-white rounded-circle mx-auto d-flex align-items-center justify-content-center" 
-                         style={{width: '100px', height: '100px', fontSize: '2.5rem'}}>
-                      {individualLeaderboard[0].avatar}
+                    <h5 className="mt-3">{topThree[1].name}</h5>
+                    <p className="text-primary fw-bold">{topThree[1].points} points</p>
+                  </Col>
+                  
+                  {/* 1st Place */}
+                  <Col md={4} className="mb-3">
+                    <div className="position-relative">
+                      <div className="bg-warning text-white rounded-circle mx-auto d-flex align-items-center justify-content-center" 
+                           style={{width: '100px', height: '100px', fontSize: '2.5rem'}}>
+                        {topThree[0].avatar || '👤'}
+                      </div>
+                      <Badge bg="warning" className="position-absolute" style={{top: '-10px', right: '20%'}}>
+                        🥇 1st
+                      </Badge>
+                      <div className="mt-2">
+                        <i className="fas fa-crown text-warning fa-2x"></i>
+                      </div>
                     </div>
-                    <Badge bg="warning" className="position-absolute" style={{top: '-10px', right: '20%'}}>
-                      🥇 1st
-                    </Badge>
-                    <div className="mt-2">
-                      <i className="fas fa-crown text-warning fa-2x"></i>
+                    <h4 className="mt-3">{topThree[0].name}</h4>
+                    <p className="text-warning fw-bold fs-5">{topThree[0].points} points</p>
+                  </Col>
+                  
+                  {/* 3rd Place */}
+                  <Col md={4} className="mb-3">
+                    <div className="position-relative">
+                      <div className="bg-danger text-white rounded-circle mx-auto d-flex align-items-center justify-content-center" 
+                           style={{width: '80px', height: '80px', fontSize: '2rem'}}>
+                        {topThree[2].avatar || '👤'}
+                      </div>
+                      <Badge bg="danger" className="position-absolute" style={{top: '-10px', right: '25%'}}>
+                        🥉 3rd
+                      </Badge>
                     </div>
-                  </div>
-                  <h4 className="mt-3">{individualLeaderboard[0].name}</h4>
-                  <p className="text-warning fw-bold fs-5">{individualLeaderboard[0].points} points</p>
-                </Col>
-                
-                {/* 3rd Place */}
-                <Col md={4} className="mb-3">
-                  <div className="position-relative">
-                    <div className="bg-danger text-white rounded-circle mx-auto d-flex align-items-center justify-content-center" 
-                         style={{width: '80px', height: '80px', fontSize: '2rem'}}>
-                      {individualLeaderboard[2].avatar}
-                    </div>
-                    <Badge bg="danger" className="position-absolute" style={{top: '-10px', right: '25%'}}>
-                      🥉 3rd
-                    </Badge>
-                  </div>
-                  <h5 className="mt-3">{individualLeaderboard[2].name}</h5>
-                  <p className="text-primary fw-bold">{individualLeaderboard[2].points} points</p>
-                </Col>
-              </Row>
-            </Card.Body>
-          </Card>
-        </Col>
-      </Row>
+                    <h5 className="mt-3">{topThree[2].name}</h5>
+                    <p className="text-primary fw-bold">{topThree[2].points} points</p>
+                  </Col>
+                </Row>
+              </Card.Body>
+            </Card>
+          </Col>
+        </Row>
+      )}
 
       {/* Leaderboard Tabs */}
       <Row>
@@ -116,90 +230,104 @@ function Leaderboard() {
                 className="mb-3"
               >
                 <Tab eventKey="individual" title="Individual Leaderboard">
-                  <Table responsive hover>
-                    <thead className="table-primary">
-                      <tr>
-                        <th>Rank</th>
-                        <th>Student</th>
-                        <th>Points</th>
-                        <th>Activities</th>
-                        <th>Progress</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {individualLeaderboard.map((student) => (
-                        <tr 
-                          key={student.rank} 
-                          className={student.isCurrentUser ? 'table-info' : ''}
-                        >
-                          <td>{getRankBadge(student.rank)}</td>
-                          <td>
-                            <div className="d-flex align-items-center">
-                              <span className="me-2" style={{fontSize: '1.5rem'}}>
-                                {student.avatar}
-                              </span>
-                              <div>
-                                <strong className={student.isCurrentUser ? 'text-primary' : ''}>
-                                  {student.name}
-                                  {student.isCurrentUser && <span className="ms-2">👈</span>}
-                                </strong>
-                              </div>
-                            </div>
-                          </td>
-                          <td>
-                            <Badge bg="primary" className="fs-6">
-                              {student.points}
-                            </Badge>
-                          </td>
-                          <td>{student.activities}</td>
-                          <td style={{width: '200px'}}>
-                            <ProgressBar 
-                              now={getPointsProgress(student.points)} 
-                              variant={student.rank <= 3 ? 'success' : 'primary'}
-                              style={{height: '8px'}}
-                            />
-                          </td>
+                  {individualLeaderboard.length > 0 ? (
+                    <Table responsive hover>
+                      <thead className="table-primary">
+                        <tr>
+                          <th>Rank</th>
+                          <th>Student</th>
+                          <th>Points</th>
+                          <th>Activities</th>
+                          <th>Progress</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </Table>
+                      </thead>
+                      <tbody>
+                        {individualLeaderboard.map((student) => (
+                          <tr 
+                            key={student.id || student.rank} 
+                            className={student.isCurrentUser ? 'table-info' : ''}
+                          >
+                            <td>{getRankBadge(student.rank)}</td>
+                            <td>
+                              <div className="d-flex align-items-center">
+                                <span className="me-2" style={{fontSize: '1.5rem'}}>
+                                  {student.avatar || '👤'}
+                                </span>
+                                <div>
+                                  <strong className={student.isCurrentUser ? 'text-primary' : ''}>
+                                    {student.name}
+                                    {student.isCurrentUser && <span className="ms-2">👈</span>}
+                                  </strong>
+                                </div>
+                              </div>
+                            </td>
+                            <td>
+                              <Badge bg="primary" className="fs-6">
+                                {student.points}
+                              </Badge>
+                            </td>
+                            <td>{student.activities}</td>
+                            <td style={{width: '200px'}}>
+                              <ProgressBar 
+                                now={getPointsProgress(student.points)} 
+                                variant={student.rank <= 3 ? 'success' : 'primary'}
+                                style={{height: '8px'}}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </Table>
+                  ) : (
+                    <div className="text-center py-5">
+                      <i className="fas fa-trophy fa-3x text-muted mb-3"></i>
+                      <p className="text-muted">No leaderboard data available yet.</p>
+                    </div>
+                  )}
                 </Tab>
 
                 <Tab eventKey="teams" title="Team Leaderboard">
-                  <Table responsive hover>
-                    <thead className="table-success">
-                      <tr>
-                        <th>Rank</th>
-                        <th>Team Name</th>
-                        <th>Total Points</th>
-                        <th>Members</th>
-                        <th>Captain</th>
-                        <th>Avg Points/Member</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {teamLeaderboard.map((team) => (
-                        <tr key={team.rank}>
-                          <td>{getRankBadge(team.rank)}</td>
-                          <td>
-                            <strong>{team.name}</strong>
-                          </td>
-                          <td>
-                            <Badge bg="success" className="fs-6">
-                              {team.points}
-                            </Badge>
-                          </td>
-                          <td>
-                            <Badge bg="info">
-                              {team.members} members
-                            </Badge>
-                          </td>
-                          <td>{team.captain}</td>
-                          <td>{Math.round(team.points / team.members)}</td>
+                  {teamLeaderboard.length > 0 ? (
+                    <Table responsive hover>
+                      <thead className="table-success">
+                        <tr>
+                          <th>Rank</th>
+                          <th>Team Name</th>
+                          <th>Total Points</th>
+                          <th>Members</th>
+                          <th>Captain</th>
+                          <th>Avg Points/Member</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </Table>
+                      </thead>
+                      <tbody>
+                        {teamLeaderboard.map((team) => (
+                          <tr key={team.id || team.rank}>
+                            <td>{getRankBadge(team.rank)}</td>
+                            <td>
+                              <strong>{team.name}</strong>
+                            </td>
+                            <td>
+                              <Badge bg="success" className="fs-6">
+                                {team.points}
+                              </Badge>
+                            </td>
+                            <td>
+                              <Badge bg="info">
+                                {team.members} members
+                              </Badge>
+                            </td>
+                            <td>{team.captain}</td>
+                            <td>{team.members > 0 ? Math.round(team.points / team.members) : 0}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </Table>
+                  ) : (
+                    <div className="text-center py-5">
+                      <i className="fas fa-users fa-3x text-muted mb-3"></i>
+                      <p className="text-muted">No team leaderboard data available yet.</p>
+                    </div>
+                  )}
                 </Tab>
               </Tabs>
             </Card.Body>
@@ -212,27 +340,27 @@ function Leaderboard() {
         <Col md={4}>
           <Card className="text-center border-primary">
             <Card.Body>
-              <h5 className="text-primary">Your Current Rank</h5>
-              <h2 className="text-primary">#10</h2>
-              <p className="text-muted mb-0">Out of 50 students</p>
+              <h5 className="text-primary">Total Students</h5>
+              <h2 className="text-primary">{individualLeaderboard.length}</h2>
+              <p className="text-muted mb-0">Competing in leaderboard</p>
             </Card.Body>
           </Card>
         </Col>
         <Col md={4}>
           <Card className="text-center border-success">
             <Card.Body>
-              <h5 className="text-success">Points to Next Rank</h5>
-              <h2 className="text-success">50</h2>
-              <p className="text-muted mb-0">Keep going! 🚀</p>
+              <h5 className="text-success">Total Teams</h5>
+              <h2 className="text-success">{teamLeaderboard.length}</h2>
+              <p className="text-muted mb-0">Active teams</p>
             </Card.Body>
           </Card>
         </Col>
         <Col md={4}>
           <Card className="text-center border-warning">
             <Card.Body>
-              <h5 className="text-warning">School Record</h5>
-              <h2 className="text-warning">1,250</h2>
-              <p className="text-muted mb-0">Points by Alex Garcia</p>
+              <h5 className="text-warning">Top Score</h5>
+              <h2 className="text-warning">{individualLeaderboard[0]?.points || 0}</h2>
+              <p className="text-muted mb-0">Points by {individualLeaderboard[0]?.name || 'Leader'}</p>
             </Card.Body>
           </Card>
         </Col>

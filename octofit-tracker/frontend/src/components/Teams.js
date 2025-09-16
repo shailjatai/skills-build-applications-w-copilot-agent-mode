@@ -1,89 +1,113 @@
-import React, { useState } from 'react';
-import { Container, Row, Col, Card, Button, Modal, Form, Badge, ListGroup } from 'react-bootstrap';
+import React, { useState, useEffect } from 'react';
+import { Container, Row, Col, Card, Button, Modal, Form, Badge, ListGroup, Spinner, Alert } from 'react-bootstrap';
+import { teamsAPI, trackerTeamsAPI } from '../services/api';
 
 function Teams() {
-  const [teams, setTeams] = useState([
-    {
-      id: 1,
-      name: 'Fitness Warriors',
-      description: 'Dedicated to crushing fitness goals together!',
-      captain: 'john_doe',
-      members: ['john_doe', 'jane_smith', 'mike_johnson'],
-      totalPoints: 1250,
-      isActive: true
-    },
-    {
-      id: 2,
-      name: 'Cardio Crew',
-      description: 'Running, cycling, and cardio enthusiasts',
-      captain: 'sarah_wilson',
-      members: ['sarah_wilson', 'david_brown', 'lisa_taylor'],
-      totalPoints: 980,
-      isActive: true
-    },
-    {
-      id: 3,
-      name: 'Strength Squad',
-      description: 'Lifting heavy and getting stronger every day',
-      captain: 'alex_garcia',
-      members: ['alex_garcia', 'chris_lee', 'emma_davis'],
-      totalPoints: 1100,
-      isActive: true
-    }
-  ]);
-
+  const [teams, setTeams] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
-  const [selectedTeam, setSelectedTeam] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
   const [newTeam, setNewTeam] = useState({
     name: '',
     description: ''
   });
 
-  const [userTeams, setUserTeams] = useState([1]); // User is member of team 1
+  // Load teams on component mount
+  useEffect(() => {
+    loadTeams();
+  }, []);
 
-  const handleCreateTeam = (e) => {
-    e.preventDefault();
-    const team = {
-      id: Date.now(),
-      name: newTeam.name,
-      description: newTeam.description,
-      captain: 'current_user', // In real app, this would be the current user
-      members: ['current_user'],
-      totalPoints: 0,
-      isActive: true
-    };
-
-    setTeams([...teams, team]);
-    setUserTeams([...userTeams, team.id]);
-    setNewTeam({ name: '', description: '' });
-    setShowCreateModal(false);
-  };
-
-  const handleJoinTeam = (teamId) => {
-    if (!userTeams.includes(teamId)) {
-      setUserTeams([...userTeams, teamId]);
-      // In a real app, you'd also update the team's members list
-      setTeams(teams.map(team => 
-        team.id === teamId 
-          ? { ...team, members: [...team.members, 'current_user'] }
-          : team
-      ));
+  const loadTeams = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Try fitness teams first, then tracker teams as fallback
+      let teamsResponse;
+      try {
+        teamsResponse = await teamsAPI.getAll();
+      } catch (fitnessError) {
+        console.warn('Fitness teams not available, trying tracker teams');
+        teamsResponse = await trackerTeamsAPI.getAll();
+      }
+      
+      setTeams(teamsResponse.results || []);
+    } catch (err) {
+      setError('Failed to load teams. Please try again.');
+      console.error('Error loading teams:', err);
+    } finally {
+      setLoading(false);
     }
-    setShowJoinModal(false);
   };
 
-  const handleLeaveTeam = (teamId) => {
-    setUserTeams(userTeams.filter(id => id !== teamId));
-    setTeams(teams.map(team => 
-      team.id === teamId 
-        ? { ...team, members: team.members.filter(member => member !== 'current_user') }
-        : team
-    ));
+  const handleCreateTeam = async (e) => {
+    e.preventDefault();
+    
+    try {
+      setSubmitting(true);
+      setError(null);
+
+      // Try fitness teams first, then tracker teams as fallback
+      let newTeamData;
+      try {
+        newTeamData = await teamsAPI.create(newTeam);
+      } catch (fitnessError) {
+        console.warn('Fitness teams not available, using tracker teams');
+        newTeamData = await trackerTeamsAPI.create(newTeam);
+      }
+
+      // Reload teams to get updated list
+      await loadTeams();
+      
+      setNewTeam({ name: '', description: '' });
+      setShowCreateModal(false);
+    } catch (err) {
+      setError('Failed to create team. Please try again.');
+      console.error('Error creating team:', err);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const myTeams = teams.filter(team => userTeams.includes(team.id));
-  const availableTeams = teams.filter(team => !userTeams.includes(team.id));
+  const handleJoinTeam = async (teamId) => {
+    try {
+      setError(null);
+      await teamsAPI.join(teamId);
+      await loadTeams(); // Reload to get updated data
+      setShowJoinModal(false);
+    } catch (err) {
+      setError('Failed to join team. Please try again.');
+      console.error('Error joining team:', err);
+    }
+  };
+
+  const handleLeaveTeam = async (teamId) => {
+    try {
+      setError(null);
+      await teamsAPI.leave(teamId);
+      await loadTeams(); // Reload to get updated data
+    } catch (err) {
+      setError('Failed to leave team. Please try again.');
+      console.error('Error leaving team:', err);
+    }
+  };
+
+  // For demo purposes, assume user is in some teams (in a real app, this would be managed by authentication)
+  const myTeams = teams.slice(0, 2); // Show first 2 as user's teams for demo
+  const availableTeams = teams.slice(2); // Rest as available teams
+
+  if (loading) {
+    return (
+      <Container className="text-center py-5">
+        <Spinner animation="border" role="status">
+          <span className="visually-hidden">Loading...</span>
+        </Spinner>
+        <p className="mt-2">Loading teams...</p>
+      </Container>
+    );
+  }
 
   return (
     <Container>
@@ -112,6 +136,16 @@ function Teams() {
         </Col>
       </Row>
 
+      {error && (
+        <Row className="mb-4">
+          <Col>
+            <Alert variant="danger" dismissible onClose={() => setError(null)}>
+              {error}
+            </Alert>
+          </Col>
+        </Row>
+      )}
+
       {/* My Teams */}
       <Row className="mb-4">
         <Col>
@@ -125,20 +159,20 @@ function Teams() {
                       <div className="d-flex justify-content-between align-items-center">
                         <h6 className="mb-0">{team.name}</h6>
                         <Badge bg="light" text="dark">
-                          {team.members.length} members
+                          {team.member_count || team.members?.length || 0} members
                         </Badge>
                       </div>
                     </Card.Header>
                     <Card.Body>
-                      <p className="text-muted">{team.description}</p>
+                      <p className="text-muted">{team.description || 'No description available'}</p>
                       <div className="d-flex justify-content-between align-items-center">
                         <div>
                           <small className="text-muted">Team Points</small>
-                          <div className="fw-bold text-primary">{team.totalPoints}</div>
+                          <div className="fw-bold text-primary">{team.total_team_points || 0}</div>
                         </div>
                         <div>
                           <small className="text-muted">Captain</small>
-                          <div className="fw-bold">{team.captain}</div>
+                          <div className="fw-bold">{team.captain?.username || team.captain || 'Unknown'}</div>
                         </div>
                       </div>
                     </Card.Body>
@@ -147,15 +181,13 @@ function Teams() {
                         <Button variant="outline-primary" size="sm">
                           View Details
                         </Button>
-                        {team.captain !== 'current_user' && (
-                          <Button 
-                            variant="outline-danger" 
-                            size="sm"
-                            onClick={() => handleLeaveTeam(team.id)}
-                          >
-                            Leave Team
-                          </Button>
-                        )}
+                        <Button 
+                          variant="outline-danger" 
+                          size="sm"
+                          onClick={() => handleLeaveTeam(team.id)}
+                        >
+                          Leave Team
+                        </Button>
                       </div>
                     </Card.Footer>
                   </Card>
@@ -207,11 +239,18 @@ function Teams() {
             </Form.Group>
           </Modal.Body>
           <Modal.Footer>
-            <Button variant="secondary" onClick={() => setShowCreateModal(false)}>
+            <Button variant="secondary" onClick={() => setShowCreateModal(false)} disabled={submitting}>
               Cancel
             </Button>
-            <Button variant="primary" type="submit">
-              Create Team
+            <Button variant="primary" type="submit" disabled={submitting}>
+              {submitting ? (
+                <>
+                  <Spinner as="span" animation="border" size="sm" role="status" aria-hidden="true" className="me-2" />
+                  Creating...
+                </>
+              ) : (
+                'Create Team'
+              )}
             </Button>
           </Modal.Footer>
         </Form>
@@ -230,16 +269,16 @@ function Teams() {
                   <div className="d-flex justify-content-between align-items-start">
                     <div className="flex-grow-1">
                       <h6 className="mb-1">{team.name}</h6>
-                      <p className="mb-1 text-muted">{team.description}</p>
+                      <p className="mb-1 text-muted">{team.description || 'No description available'}</p>
                       <div className="d-flex gap-3">
                         <small className="text-muted">
-                          Captain: <span className="fw-bold">{team.captain}</span>
+                          Captain: <span className="fw-bold">{team.captain?.username || team.captain || 'Unknown'}</span>
                         </small>
                         <small className="text-muted">
-                          Members: <span className="fw-bold">{team.members.length}</span>
+                          Members: <span className="fw-bold">{team.member_count || team.members?.length || 0}</span>
                         </small>
                         <small className="text-muted">
-                          Points: <span className="fw-bold text-primary">{team.totalPoints}</span>
+                          Points: <span className="fw-bold text-primary">{team.total_team_points || 0}</span>
                         </small>
                       </div>
                     </div>
